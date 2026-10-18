@@ -22,6 +22,8 @@ def parse_input(data):
     for name, (low, high) in RAW_INPUTS.items():
         if name not in data or data[name] in ('', None):
             raise ValueError(f'missing field: {name}')
+        if isinstance(data[name], bool):
+            raise ValueError(f'{name} must be a number')
         try:
             value = float(data[name])
         except (TypeError, ValueError):
@@ -69,14 +71,19 @@ def predict():
         return render_template('predict.html', inputs=RAW_INPUTS, types=PRODUCT_TYPES,
                                threshold=THRESHOLD, metrics=meta['test_metrics'])
 
-    data = request.get_json(silent=True) or request.form
+    if request.is_json:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'error': 'request body must be a JSON object'}), 400
+    else:
+        data = request.form
     try:
         values = parse_input(data)
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
 
     features = build_features(**values)
-    probability = float(model.predict(features, verbose=0)[0][0])
+    probability = float(model(features, training=False)[0, 0])
     return jsonify({
         'failure_probability': round(probability, 4),
         'prediction': 'failure' if probability >= THRESHOLD else 'healthy',
