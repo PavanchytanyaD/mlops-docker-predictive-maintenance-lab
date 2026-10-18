@@ -50,7 +50,7 @@ The steps are the same as the original lab. What happens inside each step is new
 | 4. Scale | `StandardScaler` on training data, not applied when serving | Keras `Normalization` layer inside the model, so serving uses the same scaling |
 | 5. Build model | Dense(8) → Dense(3, softmax) | Dense(64) → Dropout → Dense(32) → Dropout → Dense(1, sigmoid) |
 | 6. Train | 50 epochs, accuracy | Up to 300 epochs with early stopping on validation PR-AUC |
-| 7. Evaluate | Validation accuracy printed during training | Threshold tuned on validation; test ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix, recall per failure mode, rule baseline |
+| 7. Evaluate | Test set passed as `validation_data`, accuracy printed during training | Separate validation set for early stopping and the threshold; test set used once for ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix, recall per failure mode, rule baseline |
 | 8. Save | `my_model.keras` | `maintenance_model.keras` + `model_meta.json` (threshold and metrics) |
 | 9. Docker stage 1 | `python:3.10`, install, run training | `python:3.11-slim`, install (cached layer), copy data, run training |
 | 10. Docker stage 2 | Copy model + app, Flask debug server, exposes 80 but app runs on 4000 | Copy only the model + app, non-root user, health check, gunicorn on port 80 |
@@ -58,10 +58,31 @@ The steps are the same as the original lab. What happens inside each step is new
 | 12. `GET /predict` | Iris form (4 inputs) | Machine health form (product type + 5 inputs, presets from real rows) |
 | 13. `POST /predict` | Form data → predicted species | JSON or form data, range checks → failure probability, prediction, risk level, physics checks |
 | 14. Errors | Returned with status 200 | Returned with status 400 and a clear message |
-| 15. Result page | Species name + flower picture | Verdict, probability gauge with threshold, physics checks |
+| 15. Result page | Species name + flower picture, "CONFIDENCE: HIGH" badge is hard-coded | Verdict, real probability on a gauge with the threshold, physics checks |
 | 16. Extra endpoints | none | `/health`, `/model-info` |
-| 17. Compose: training service | Install, train, copy model to shared volume | Same, copies model + metadata |
-| 18. Compose: serving service | Copy model from volume, run app, ports `80:80` | Same, gunicorn, ports `8080:80`, health check |
+| 17. Tests | none | pytest tests for features, training helpers, API and the trained model |
+| 18. Compose: training service | Install, train, copy model to shared volume | Same, copies model + metadata |
+| 19. Compose: serving service | Copy model from volume, run app, ports `80:80` | Same, gunicorn, ports `8080:80`, health check |
+
+---
+
+## Bugs Fixed from the Original
+
+While adapting the lab I found these problems in the original code:
+
+- Scaling mismatch: `model_training.py` scales the inputs with `StandardScaler`,
+  but the scaler is never saved, and `main.py` sends raw numbers to the model. I
+  ran the original model on all 150 Iris flowers the way the app does: it predicts
+  Virginica for every one (33% accuracy).
+- Port mismatch: the Dockerfile exposes 80 and compose maps `80:80`, but the
+  app listens on port 4000, so the page can't be reached from the host.
+- HOWTO: `docker run app` has no `-p` port mapping.
+- Test set used for validation: `validation_data=(X_test, y_test)`, so there is
+  no untouched test set.
+- Hard-coded badge: the result page always shows "CONFIDENCE: HIGH".
+- Errors return 200: a bad request gets an error message with a 200 status.
+- Debug server: the app runs Flask with `debug=True` inside the container.
+- Unused code: `api_url` in `main.py` is never used.
 
 ---
 
@@ -85,19 +106,21 @@ version:
   validation set for the best F1 instead of 0.5. The report covers ROC-AUC, PR-AUC,
   precision, recall, F1, the confusion matrix and recall per failure mode. Everything
   is saved to `model/model_meta.json`.
-- **Model choice:** I compared five network sizes on the validation set. 64-32
-  units with dropout and no class weights did best (validation PR-AUC 0.854).
-  Class weights made it worse (0.806), because threshold tuning already handles the
-  imbalance.
+- **Model choice:** I compared six setups on the validation set on my Mac (four
+  network sizes, with and without class weights). 64-32 units with dropout and no
+  class weights did best (validation PR-AUC 0.854). The same network with class
+  weights did worse (0.806), because threshold tuning already handles the imbalance.
 - **Baseline:** a rule-only baseline (flag a failure when any documented physics
   rule fires) is scored on the same test rows.
 - **Web app:** a new machine-health page with a product type selector, five sensor
   inputs, presets taken from real dataset rows, a probability gauge with the
   threshold marked, and physics checks that explain the reading. CSS and JS are
   in `src/statics/`.
-- **API:** `/predict` accepts JSON or form data, checks ranges and returns clear
-  400 errors (the original returned 200 with an error message). There are new
+- **API:** `/predict` accepts JSON or form data, checks types and ranges and returns
+  clear 400 errors (the original returned 200 with an error message). There are new
   `/health` and `/model-info` endpoints.
+- **Tests:** pytest tests in `tests/` for the feature code, training helpers, API
+  and the trained model.
 - **Docker:**
   - The original app listened on port 4000 while the Dockerfile and compose
     exposed 80. Now the app listens on 80 and is published on host port 8080.
@@ -132,13 +155,13 @@ Failures caught by failure mode:
 
 Some rows have more than one mode, so these add up to more than 51.
 
-What this shows:
+Notes on the results:
 
-- **Tool wear failures are nearly impossible to predict** from a single reading.
+- Tool wear failures are nearly impossible to predict from a single reading.
   The dataset replaces tools at a random time between 200 and 240 minutes, so two
   readings with the same wear can have different outcomes.
-- **The physics rules alone catch almost every failure but raise far too many
-  false alarms** (precision 0.30). The main cause is the tool-wear rule: 801
+- The physics rules alone catch almost every failure but raise far too many
+  false alarms (precision 0.30). The main cause is the tool-wear rule: 801
   readings have 200+ minutes of wear, and only 123 of them failed. The model keeps
   most of that recall with far fewer false alarms.
 - Training the same script on macOS gives slightly different numbers (F1 0.79)
@@ -158,14 +181,17 @@ What this shows:
 ├── docker-compose.yml      # training container + serving container
 ├── HOWTO
 ├── requirements.txt
+├── requirements-dev.txt    # requirements + pytest
+├── pytest.ini
 ├── data/ai4i2020.csv
 ├── assets/                 # app screenshot
-└── src/
-    ├── features.py         # feature engineering + physics checks
-    ├── model_training.py   # Keras model training and evaluation
-    ├── main.py             # Flask app
-    ├── templates/predict.html
-    └── statics/            # style.css, app.js
+├── src/
+│   ├── features.py         # feature engineering + physics checks
+│   ├── model_training.py   # Keras model training and evaluation
+│   ├── main.py             # Flask app
+│   ├── templates/predict.html
+│   └── statics/            # style.css, app.js
+└── tests/                  # pytest tests
 ```
 
 ---
@@ -222,3 +248,11 @@ A bad request gets a 400 with a message, for example
 `{"error": "torque_nm must be between 3.0 and 77.0"}`.
 
 Other endpoints: `GET /health` and `GET /model-info` (threshold and test metrics).
+
+### Running the tests
+
+```sh
+pip install -r requirements-dev.txt
+python src/model_training.py   # optional: the trained model tests are skipped without it
+pytest
+```
