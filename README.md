@@ -60,7 +60,7 @@ The steps are the same as the original lab. What happens inside each step is new
 | 14. Errors | Returned with status 200 | Returned with status 400 and a clear message |
 | 15. Result page | Species name + flower picture, "CONFIDENCE: HIGH" badge is hard-coded | Verdict, real probability on a gauge with the threshold, physics checks |
 | 16. Extra endpoints | none | `/health`, `/model-info` |
-| 17. Tests | none | pytest tests for features, training helpers, API and the trained model |
+| 17. Tests | none | pytest tests for features, training helpers, API and the trained model, run by GitHub Actions on every push |
 | 18. Compose: training service | Install, train, copy model to shared volume | Same, copies model + metadata |
 | 19. Compose: serving service | Copy model from volume, run app, ports `80:80` | Same, gunicorn, ports `8080:80`, health check |
 
@@ -120,7 +120,8 @@ version:
   clear 400 errors (the original returned 200 with an error message). There are new
   `/health` and `/model-info` endpoints.
 - **Tests:** pytest tests in `tests/` for the feature code, training helpers, API
-  and the trained model.
+  and the trained model. A GitHub Actions workflow trains the model and runs them
+  on every push.
 - **Docker:**
   - The original app listened on port 4000 while the Dockerfile and compose
     exposed 80. Now the app listens on 80 and is published on host port 8080.
@@ -191,7 +192,8 @@ Notes on the results:
 │   ├── main.py             # Flask app
 │   ├── templates/predict.html
 │   └── statics/            # style.css, app.js
-└── tests/                  # pytest tests
+├── tests/                  # pytest tests
+└── .github/workflows/tests.yml   # runs the tests on every push
 ```
 
 ---
