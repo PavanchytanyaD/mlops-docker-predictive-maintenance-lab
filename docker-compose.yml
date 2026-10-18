@@ -1,0 +1,46 @@
+services:
+  # Service 1: Train the model
+  model-training:
+    image: python:3.11-slim
+    container_name: pm_trainer
+    working_dir: /app
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+      - ./requirements.txt:/app/requirements.txt
+      - model_exchange:/exchange   # Shared volume mount
+    # Run training -> Copy model and metadata to shared folder
+    command: >
+      sh -c "pip install --no-cache-dir -r requirements.txt &&
+             python src/model_training.py &&
+             cp model/maintenance_model.keras model/model_meta.json /exchange/"
+
+  # Service 2: Serve the model
+  serving:
+    image: python:3.11-slim
+    container_name: pm_serving
+    working_dir: /app
+    ports:
+      - "8080:80"
+    environment:
+      - MODEL_DIR=/app/model
+    volumes:
+      - ./src:/app/src
+      - ./requirements.txt:/app/requirements.txt
+      - model_exchange:/exchange   # Shared volume mount
+    depends_on:
+      model-training:
+        condition: service_completed_successfully
+    # Copy model FROM shared folder -> Run server
+    command: >
+      sh -c "pip install --no-cache-dir -r requirements.txt &&
+             mkdir -p model && cp /exchange/* model/ &&
+             gunicorn --chdir src --bind 0.0.0.0:80 --workers 2 main:app"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:80/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 120s
+
+volumes:
+  model_exchange:
