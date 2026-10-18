@@ -38,6 +38,33 @@ UCI Machine Learning Repository. https://doi.org/10.24432/C5HS5C
 
 ---
 
+## Original vs This Version
+
+The steps are the same as the original lab. What happens inside each step is new.
+
+| Step | Original | This version |
+|---|---|---|
+| 1. Load data | Iris from `sklearn.datasets` (150 rows, 4 features, 3 classes) | AI4I 2020 CSV (10,000 rows, binary failure label, 3.4% failures) |
+| 2. Prepare features | 4 raw flower measurements | 5 sensor readings + 3 engineered features (temperature difference, power, wear x torque) + one-hot product type; ID and failure-mode columns dropped |
+| 3. Split | 80/20 random split | Stratified 70/15/15 train/validation/test split |
+| 4. Scale | `StandardScaler` on training data, not applied when serving | Keras `Normalization` layer inside the model, so serving uses the same scaling |
+| 5. Build model | Dense(8) → Dense(3, softmax) | Dense(64) → Dropout → Dense(32) → Dropout → Dense(1, sigmoid) |
+| 6. Train | 50 epochs, accuracy | Up to 300 epochs with early stopping on validation PR-AUC |
+| 7. Evaluate | Validation accuracy printed during training | Threshold tuned on validation; test ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix, recall per failure mode, rule baseline |
+| 8. Save | `my_model.keras` | `maintenance_model.keras` + `model_meta.json` (threshold and metrics) |
+| 9. Docker stage 1 | `python:3.10`, install, run training | `python:3.11-slim`, install (cached layer), copy data, run training |
+| 10. Docker stage 2 | Copy model + app, Flask debug server, exposes 80 but app runs on 4000 | Copy only the model + app, non-root user, health check, gunicorn on port 80 |
+| 11. Load model in app | Load `my_model.keras` | Load model + metadata once at startup |
+| 12. `GET /predict` | Iris form (4 inputs) | Machine health form (product type + 5 inputs, presets from real rows) |
+| 13. `POST /predict` | Form data → predicted species | JSON or form data, range checks → failure probability, prediction, risk level, physics checks |
+| 14. Errors | Returned with status 200 | Returned with status 400 and a clear message |
+| 15. Result page | Species name + flower picture | Verdict, probability gauge with threshold, physics checks |
+| 16. Extra endpoints | none | `/health`, `/model-info` |
+| 17. Compose: training service | Install, train, copy model to shared volume | Same, copies model + metadata |
+| 18. Compose: serving service | Copy model from volume, run app, ports `80:80` | Same, gunicorn, ports `8080:80`, health check |
+
+---
+
 ## My Modifications
 
 The original lab trains a small Keras model on Iris (150 rows, 4 features, 3
