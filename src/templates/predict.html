@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Machine Health Monitor</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header>
+        <div>
+            <h1>Machine Health Monitor</h1>
+            <p class="subtitle">Predicts milling machine failure from sensor readings (AI4I 2020 dataset)</p>
+        </div>
+        <div class="model-stats">
+            <span>Test ROC-AUC <b>{{ metrics.roc_auc }}</b></span>
+            <span>Test recall <b>{{ metrics.recall }}</b></span>
+            <span>Threshold <b>{{ threshold }}</b></span>
+        </div>
+    </header>
+
+    <main>
+        <section class="panel">
+            <h2>Sensor readings</h2>
+            <div class="presets">
+                <span>Try a real reading:</span>
+                <button type="button" data-preset="healthy">Healthy</button>
+                <button type="button" data-preset="heat">Heat failure</button>
+                <button type="button" data-preset="power">Power failure</button>
+                <button type="button" data-preset="strain">Overstrain</button>
+            </div>
+
+            <form id="predictionForm">
+                <label for="product_type">Product type
+                    <select id="product_type" name="product_type">
+                        <option value="L">L (low quality, 60% of products)</option>
+                        <option value="M">M (medium quality)</option>
+                        <option value="H">H (high quality)</option>
+                    </select>
+                </label>
+                <label for="air_temp_k">Air temperature (K)
+                    <input type="number" id="air_temp_k" name="air_temp_k" step="0.1" required
+                           min="{{ inputs.air_temp_k[0] }}" max="{{ inputs.air_temp_k[1] }}">
+                </label>
+                <label for="process_temp_k">Process temperature (K)
+                    <input type="number" id="process_temp_k" name="process_temp_k" step="0.1" required
+                           min="{{ inputs.process_temp_k[0] }}" max="{{ inputs.process_temp_k[1] }}">
+                </label>
+                <label for="rotational_speed_rpm">Rotational speed (rpm)
+                    <input type="number" id="rotational_speed_rpm" name="rotational_speed_rpm" step="1" required
+                           min="{{ inputs.rotational_speed_rpm[0] }}" max="{{ inputs.rotational_speed_rpm[1] }}">
+                </label>
+                <label for="torque_nm">Torque (Nm)
+                    <input type="number" id="torque_nm" name="torque_nm" step="0.1" required
+                           min="{{ inputs.torque_nm[0] }}" max="{{ inputs.torque_nm[1] }}">
+                </label>
+                <label for="tool_wear_min">Tool wear (min)
+                    <input type="number" id="tool_wear_min" name="tool_wear_min" step="1" required
+                           min="{{ inputs.tool_wear_min[0] }}" max="{{ inputs.tool_wear_min[1] }}">
+                </label>
+                <button type="submit" class="submit-btn" id="submitBtn">Check machine</button>
+            </form>
+        </section>
+
+        <section class="panel" id="resultPanel">
+            <h2>Prediction</h2>
+            <p class="placeholder" id="placeholder">Enter readings or pick a preset, then press "Check machine".</p>
+            <div id="result" hidden>
+                <div class="verdict" id="verdict"></div>
+                <div class="gauge">
+                    <div class="gauge-fill" id="gaugeFill"></div>
+                    <div class="gauge-mark" style="left: {{ threshold * 100 }}%" title="decision threshold"></div>
+                </div>
+                <p class="prob">Failure probability <b id="probability"></b> (failure if above {{ threshold }})</p>
+
+                <h3>Physics checks</h3>
+                <p class="note">Rule-based checks for the failure modes described with the dataset. They explain the reading and are not inputs to the model.</p>
+                <ul id="checks"></ul>
+            </div>
+            <p class="error" id="error" hidden></p>
+        </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
