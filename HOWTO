@@ -1,0 +1,8 @@
+# Option 1: multi-stage image (trains during the build, then serves)
+docker build -t pm-app .
+docker run -p 8080:80 pm-app
+
+# Option 2: docker compose (training container, then serving container)
+docker compose up
+
+# Open http://localhost:8080/predict
