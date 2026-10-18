@@ -1,0 +1,6 @@
+.venv/
+.git/
+model/
+assets/
+**/__pycache__/
+*.tar
