@@ -9,7 +9,6 @@ from sklearn.metrics import (average_precision_score, confusion_matrix, f1_score
                              precision_recall_curve, precision_score, recall_score,
                              roc_auc_score)
 from sklearn.model_selection import train_test_split
-from sklearn.utils.class_weight import compute_class_weight
 
 from features import FEATURE_NAMES, build_features, physics_checks
 
@@ -38,9 +37,10 @@ def build_model(X_train):
     model = tf.keras.Sequential([
         tf.keras.Input(shape=(X_train.shape[1],)),
         norm,
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dropout(0.2),
         tf.keras.layers.Dense(32, activation='relu'),
         tf.keras.layers.Dropout(0.2),
-        tf.keras.layers.Dense(16, activation='relu'),
         tf.keras.layers.Dense(1, activation='sigmoid'),
     ])
     model.compile(
@@ -88,16 +88,12 @@ if __name__ == '__main__':
     print(f'train {len(y_train)} | val {len(y_val)} | test {len(y_test)} | '
           f'failure rate {y.mean():.2%}')
 
-    # Class weights so the model doesn't just predict "healthy"
-    weights = compute_class_weight('balanced', classes=np.array([0, 1]), y=y_train)
-    class_weight = {0: float(weights[0]), 1: float(weights[1])}
-
     model = build_model(X_train)
     early_stop = tf.keras.callbacks.EarlyStopping(
         monitor='val_pr_auc', mode='max', patience=20, restore_best_weights=True)
     history = model.fit(
         X_train, y_train, validation_data=(X_val, y_val),
-        epochs=300, batch_size=64, class_weight=class_weight,
+        epochs=300, batch_size=64,
         callbacks=[early_stop], verbose=2,
     )
 
